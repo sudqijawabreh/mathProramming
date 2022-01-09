@@ -18,12 +18,14 @@ for iteration in doctordf.iterrows():
     doctors_data[name] = {} 
     doctors_data[name]["state_coverage"] = row[1] 
     doctors_data[name]["priority"] = row[2] 
+    doctors_data[name]["can_hypertension"] = row[3] 
+    doctors_data[name]["can_diabetes"] = row[4] 
     doctors_data[name]["shift_available"] = [] 
     for day in range(num_days): 
         dayList = []
         for shift in range(num_shifts): 
             dayList.append(
-                int((shift*6 >= row[3 + day * 2]) and ((shift+1)*6 <= row[3 + day*2 + 1]))
+                int((shift*6 >= row[5 + day * 2]) and ((shift+1)*6 <= row[5 + day*2 + 1]))
             )
         doctors_data[name]["shift_available"].append(dayList)
 
@@ -50,10 +52,16 @@ for i in range(num_days):
 model = cp_model.CpModel()
 for doctor in doctors_data.keys():
         doctors_data[doctor]["worked_shifts"] = []
+        doctors_data[doctor]["hyper_shifts"] = []
+        doctors_data[doctor]["diabetes_shifts"] = []
         for day,index in zip(doctors_data[doctor]["shift_available"], all_days):
             doctors_data[doctor]["worked_shifts"].append([])
+            doctors_data[doctor]["hyper_shifts"].append([])
+            doctors_data[doctor]["diabetes_shifts"].append([])
             for (shift,sindex) in zip(day,all_shifts):
-                doctors_data[doctor]["worked_shifts"][index].append(model.NewBoolVar('shift_doc%sd%is%i' % (doctor, index, sindex)))
+                doctors_data[doctor]["worked_shifts"][index].append(model.NewBoolVar('w_shift_doc%sd%is%i' % (doctor, index, sindex)))
+                doctors_data[doctor]["hyper_shifts"][index].append(model.NewBoolVar('h_shift_doc%sd%is%i' % (doctor, index, sindex)))
+                doctors_data[doctor]["diabetes_shifts"][index].append(model.NewBoolVar('d_shift_doc%sd%is%i' % (doctor, index, sindex)))
 
 
 for (s,d) in zip(max_patients_shift, range(len(max_patients_shift))):
@@ -65,6 +73,48 @@ for dindex in all_days:
             print(dindex,sindex)
             model.Add(sum(doctors_data[doctor]["worked_shifts"][dindex][sindex] for doctor in doctors_data.keys()) <= 1)
                    
+for dindex in all_days:
+    for sindex in all_shifts:
+            print(dindex,sindex)
+            model.Add(sum(doctors_data[doctor]["hyper_shifts"][dindex][sindex] for doctor in doctors_data.keys()) <= 1)
+
+for dindex in all_days:
+    for sindex in all_shifts:
+            print(dindex,sindex)
+            model.Add(sum(doctors_data[doctor]["diabetes_shifts"][dindex][sindex] for doctor in doctors_data.keys()) <= 1)
+
+hypertension_days = list((model.NewBoolVar("hyper_day%s" % day) for day in all_days))
+diabetes_days = list((model.NewBoolVar("diabetes_day%s" % day) for day in all_days))
+
+
+for dindex in all_days:
+    hy_day= hypertension_days[dindex]
+    sum_value = sum(
+    doctors_data[doctor]["hyper_shifts"][dindex][sindex] 
+    for doctor in doctors_data.keys()
+    for sindex in all_shifts
+    )
+    model.Add(sum_value == num_shifts).OnlyEnforceIf(hy_day)
+    model.Add(sum_value == 0).OnlyEnforceIf(hy_day.Not())
+
+for dindex in all_days:
+    hy_day= diabetes_days[dindex]
+    sum_value = sum(
+    doctors_data[doctor]["diabetes_shifts"][dindex][sindex] 
+    for doctor in doctors_data.keys()
+    for sindex in all_shifts
+    )
+    model.Add(sum_value == num_shifts).OnlyEnforceIf(hy_day)
+    model.Add(sum_value == 0).OnlyEnforceIf(hy_day.Not())
+    
+
+hyper_shifts_sum = sum(hypertension_days)
+model.Add(hyper_shifts_sum >= 3)
+model.Add(hyper_shifts_sum <= 4)
+
+diabetes_shifts_sum = sum(diabetes_days)
+model.Add(diabetes_shifts_sum >= 3)
+model.Add(diabetes_shifts_sum <= 4)
 
 
 
@@ -79,7 +129,24 @@ model.Maximize(
             (100 * doctors_data[doctor]["priority"] + doctors_data[doctor]["state_coverage"])
         for doctor in doctors_data.keys() 
         for (day,dindex) in zip(doctors_data[doctor]["worked_shifts"], all_days)
-        for (shift,sindex) in zip(day,all_shifts)))
+        for (shift,sindex) in zip(day,all_shifts))
+        +
+        sum(
+            doctors_data[doctor]["can_hypertension"] *
+            doctors_data[doctor]["shift_available"][dindex][sindex] * shift *
+            (100 * doctors_data[doctor]["priority"] + doctors_data[doctor]["state_coverage"])
+        for doctor in doctors_data.keys() 
+        for (day,dindex) in zip(doctors_data[doctor]["hyper_shifts"], all_days)
+        for (shift,sindex) in zip(day,all_shifts))
+        +
+        sum(
+            doctors_data[doctor]["can_diabetes"] *
+            doctors_data[doctor]["shift_available"][dindex][sindex] * shift *
+            (100 * doctors_data[doctor]["priority"] + doctors_data[doctor]["state_coverage"])
+        for doctor in doctors_data.keys() 
+        for (day,dindex) in zip(doctors_data[doctor]["diabetes_shifts"], all_days)
+        for (shift,sindex) in zip(day,all_shifts))
+        )
 
 
 solver = cp_model.CpSolver()
@@ -97,7 +164,7 @@ status = solver.Solve(model)
 
 #print(list(solver.Value(s) for d in doctors_data["doctor17"]["worked_shifts"] for s in d))
 if(status == cp_model.OPTIMAL):
-    print("solution:")
+    print("solution primary:")
     for doctor in doctors_data.keys():
         print(doctor)
         for (day,dindex) in zip(doctors_data[doctor]["worked_shifts"], all_days):
@@ -112,3 +179,26 @@ if(status == cp_model.OPTIMAL):
 
 
         
+print("solution hypertension clinic:")
+for doctor in doctors_data.keys():
+    print(doctor)
+    for (day,dindex) in zip(doctors_data[doctor]["hyper_shifts"], all_days):
+        if(any(map(lambda x : solver.Value(x),day))):
+            for (shift,sindex) in zip(day,all_shifts):
+                assigned = solver.Value(shift)
+                if(assigned == 1):
+                    print("Day",dindex, end=' ')
+                    print("shift",sindex, solver.Value(shift))
+            print()
+
+print("solution diabetes clinic:")
+for doctor in doctors_data.keys():
+    print(doctor)
+    for (day,dindex) in zip(doctors_data[doctor]["diabetes_shifts"], all_days):
+        if(any(map(lambda x : solver.Value(x),day))):
+            for (shift,sindex) in zip(day,all_shifts):
+                assigned = solver.Value(shift)
+                if(assigned == 1):
+                    print("Day",dindex, end=' ')
+                    print("shift",sindex, solver.Value(shift))
+            print()
