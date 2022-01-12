@@ -146,6 +146,17 @@ model.Maximize(
         for doctor in doctors_data.keys() 
         for (day,dindex) in zip(doctors_data[doctor]["diabetes_shifts"], all_days)
         for (shift,sindex) in zip(day,all_shifts))
+        +
+        sum(
+            doctors_data[doctor]["shift_available"][dindex][sindex] *
+            (
+            (doctors_data[doctor]["can_diabetes"] * shift ) +
+            (doctors_data[doctor]["can_hypertension"] * doctors_data[doctor]["hyper_shifts"][dindex][sindex]) +
+            (doctors_data[doctor]["worked_shifts"][dindex][sindex])
+            )
+        for doctor in doctors_data.keys() 
+        for (day,dindex) in zip(doctors_data[doctor]["diabetes_shifts"], all_days)
+        for (shift,sindex) in zip(day,all_shifts))
         )
 
 
