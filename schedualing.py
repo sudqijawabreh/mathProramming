@@ -9,52 +9,54 @@ def getDateIndex(date):
             return i
 
 
-doctordf = pd.read_excel("./final_doctor.xlsx", header=0) 
+doctordf = pd.read_excel("./monday_Doctors_availble_time.xlsx", header=0) 
 #doctordf = pd.read_excel("./doctors - Copy.xlsx",sheet_name="Sheet2", header=0) 
 
 
+two_doctors_shift_patient_number = 10
 doctordf=doctordf.iloc[:,: 10]
 
-max1=pd.to_datetime(max(doctordf['date'])).day
-min1=pd.to_datetime(min(doctordf['date'])).day
+max1=pd.to_datetime(max(doctordf['Date'])).day
+min1=pd.to_datetime(min(doctordf['Date'])).day
 diff=max1-min1+1
-dates=pd.to_datetime(doctordf['date']).dt.date
+dates=pd.to_datetime(doctordf['Date']).dt.date
 dates=pd.DatetimeIndex(sorted(dates.unique()))
 
 for i in dates:
     print(i.date())
+    print(i.weekday())
 
-num_days = diff
+# num of days in all the month
+num_days = len(dates)
 all_days = range(num_days)
 all_days_in_weeks = range((num_days // 7) * 7)
 
-patientsdf =pd.read_csv("./shfits.csv", header=0)
+patientsdf =pd.read_csv("./patient_byweekday_14hour.csv", header=0)
 num_shifts = len(patientsdf['hourly_period_rank'].unique())
 all_shifts = range(num_shifts)
 shift_period = 24 // num_shifts
+# num of patients for everyday in the month
 patients = [ [0 for i in range(num_shifts)] for j in range(num_days)]
+# num of patients weekly 
+weekly_patients_schedual = [ [0 for i in range(num_shifts)] for j in range(7)]
 for iteration in patientsdf.iterrows(): 
     row = iteration[1] 
-    shiftNumber = int(row[2]) - 1
-    row_date = row[0]
-    day_patients_num = row[3]
-    print(row_date,getDateIndex(row_date),day_patients_num)
-    index = getDateIndex(row_date)
-    if index is None:
-        print("date %s doesn't match any dates from doctors shifts" % row_date)
-        continue
-    patients[getDateIndex(row_date)][shiftNumber] = day_patients_num
+    shiftNumber = int(row[1])
+    week_day = int(row[0]) - 1
+    day_patients_num = row[2]
+    weekly_patients_schedual[week_day][shiftNumber] = day_patients_num
 
-max_patients_shift = []
+for (date,day) in zip(dates,range(num_days)):
+    for shift in range(num_shifts):
+        date_week_day = date.weekday()
+        patients[day][shift] = weekly_patients_schedual[date_week_day][shift]
+
+two_doctors_shifts = []
 
 for i in range(num_days):
-    maxItem = patients[i][0]
-    maxItemIndex = 0
     for j in range(num_shifts):
-        if patients[i][j] > maxItem:
-            maxItem = patients[i][j]
-            maxItemIndex = j
-    max_patients_shift.append(maxItemIndex)
+        if patients[i][j] > two_doctors_shift_patient_number:
+            two_doctors_shifts.append((i,j))
 
 
 
@@ -63,26 +65,28 @@ doctors_data = {}
 for iteration in doctordf.iterrows(): 
     row = iteration[1] 
     name = row[0] 
-    print(name,row[9])
     doctors_data[name] = {} 
-    doctors_data[name]["state_coverage"] = row[1] 
-    doctors_data[name]["priority"] = row[2] 
-    doctors_data[name]["can_hypertension"] = row[3] 
-    doctors_data[name]["can_diabetes"] = row[4] 
+    doctors_data[name]["fixed"] = row[4]
+    doctors_data[name]["priority"] = row[5] 
+    doctors_data[name]["can_hypertension"] = row[6] 
+    # TODO Add coloumn for diabetes
+    doctors_data[name]["can_diabetes"] = row[6] 
     doctors_data[name]["shift_available"] = [[0 for i in range(num_shifts)] for j in range(num_days)]
-    doctors_data[name]["fixed"] = row[9]
+    doctors_data[name]["requested_hours"] = row[7]
     
 
 for iteration in doctordf.iterrows(): 
     row = iteration[1] 
     name = row[0] 
-    row_date = row[5]
+    row_date = row[1]
     for shift in range(num_shifts): 
-        value =  int((shift * shift_period >= row[7]) and ((shift+1) * shift_period <= row[8]))
+        start_hour = int(row[2][0:2])
+        end_hour = int(row[3][0:2])
+        value =  int((shift * shift_period >= start_hour) and ((shift+1) * shift_period <= end_hour))
         existing = doctors_data[name]["shift_available"][getDateIndex(row_date)][shift]
         doctors_data[name]["shift_available"][getDateIndex(row_date)][shift] = existing or value
         print(getDateIndex(row_date))
-        print(name,row_date,shift,value,row[7],row[8])
+        print(name,row_date,shift,value,start_hour,end_hour)
     if doctors_data[name]["fixed"] == 1:
         one_day = doctors_data[name]["shift_available"][getDateIndex(row_date)]
         for day in all_days:
@@ -101,7 +105,7 @@ def chunks(lst, n):
         yield lst[i:i + n]
 
 
-for (i,s) in zip(range(num_days),max_patients_shift):
+for (i,s) in zip(range(num_days),two_doctors_shifts):
     patients[i][s]
 
 # add variables
@@ -132,12 +136,12 @@ for doctor in all_fixed_doctors:
 
 
 
-for (s,d) in zip(max_patients_shift, range(len(max_patients_shift))):
+for (s,d) in zip(two_doctors_shifts, range(len(two_doctors_shifts))):
      model.Add(sum(doctors_data[doctor]["worked_shifts"][d][s] for doctor in all_doctors) == 2)
 
 for dindex in all_days:
     for sindex in all_shifts:
-        if(max_patients_shift[dindex] != sindex):
+        if not (dindex, sindex) in two_doctors_shifts:
             print(dindex,sindex)
             model.Add(sum(doctors_data[doctor]["worked_shifts"][dindex][sindex] for doctor in all_doctors ) == 1)
 
@@ -195,7 +199,7 @@ model.Add(diabetes_shifts_sum <= 4)
 model.Maximize(
         sum(
             doctors_data[doctor]["shift_available"][dindex][sindex] * shift *
-            (100 * doctors_data[doctor]["priority"] + doctors_data[doctor]["state_coverage"])
+            (100 * doctors_data[doctor]["priority"])
         for doctor in all_doctors
         for (day,dindex) in zip(doctors_data[doctor]["worked_shifts"], all_days)
         for (shift,sindex) in zip(day,all_shifts))
@@ -203,7 +207,7 @@ model.Maximize(
         sum(
             doctors_data[doctor]["can_hypertension"] *
             doctors_data[doctor]["shift_available"][dindex][sindex] * shift *
-            (100 * doctors_data[doctor]["priority"] + doctors_data[doctor]["state_coverage"])
+            (100 * doctors_data[doctor]["priority"])
         for doctor in all_non_fixed_doctors
         for (day,dindex) in zip(doctors_data[doctor]["hyper_shifts"], all_days_in_weeks)
         for (shift,sindex) in zip(day,all_shifts))
@@ -211,7 +215,7 @@ model.Maximize(
         sum(
             doctors_data[doctor]["can_diabetes"] *
             doctors_data[doctor]["shift_available"][dindex][sindex] * shift *
-            (100 * doctors_data[doctor]["priority"] + doctors_data[doctor]["state_coverage"])
+            (100 * doctors_data[doctor]["priority"])
         for doctor in all_non_fixed_doctors 
         for (day,dindex) in zip(doctors_data[doctor]["diabetes_shifts"], all_days_in_weeks)
         for (shift,sindex) in zip(day,all_shifts))
@@ -239,7 +243,7 @@ if(status == cp_model.OPTIMAL):
 
 
 
-        
+
 if(status == cp_model.OPTIMAL):
     print("solution hypertension clinic:")
     for doctor in doctors_data.keys():
