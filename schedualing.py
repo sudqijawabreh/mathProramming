@@ -72,7 +72,7 @@ for iteration in doctordf.iterrows():
     # TODO Add coloumn for diabetes
     doctors_data[name]["can_diabetes"] = row[6] 
     doctors_data[name]["shift_available"] = [[0 for i in range(num_shifts)] for j in range(num_days)]
-    doctors_data[name]["requested_hours"] = row[7]
+    doctors_data[name]["requested_hours"] = [0 for j in range(num_days)]
     
 
 for iteration in doctordf.iterrows(): 
@@ -85,6 +85,7 @@ for iteration in doctordf.iterrows():
         value =  int((shift * shift_period >= start_hour) and ((shift+1) * shift_period <= end_hour))
         existing = doctors_data[name]["shift_available"][getDateIndex(row_date)][shift]
         doctors_data[name]["shift_available"][getDateIndex(row_date)][shift] = existing or value
+        doctors_data[name]["requested_hours"][getDateIndex(row_date)] = int(row[7])
         print(getDateIndex(row_date))
         print(name,row_date,shift,value,start_hour,end_hour)
     if doctors_data[name]["fixed"] == 1:
@@ -133,9 +134,33 @@ for doctor in all_doctors:
     for day,index in zip(doctors_data[doctor]["shift_available"], all_days):
             for (shift,sindex) in zip(day,all_shifts):
                 if doctors_data[doctor]["shift_available"][index][sindex] == 0:
-                    print(doctors_data[doctor]["worked_shifts"][index][sindex] == 1)
                     model.Add(doctors_data[doctor]["worked_shifts"][index][sindex] == 0)
 
+for doctor in all_doctors:
+    print(doctor)
+
+for doctor in all_non_fixed_doctors:
+    for index in (all_days):
+            model.Add( sum(doctors_data[doctor]["worked_shifts"][index][sindex] for sindex in all_shifts) <= doctors_data[doctor]["requested_hours"][index])
+        #model.Add( sum(doctors_data['Dr. Abigail Bienenfeld']["worked_shifts"][index][sindex] for sindex in all_shifts) <= doctors_data['Dr. Abigail Bienenfeld']["requested_hours"][index])
+        #model.Add( sum(doctors_data['Dr. Batya Zuckerman']["worked_shifts"][index][sindex] for sindex in all_shifts) <= doctors_data['Dr. Batya Zuckerman']["requested_hours"][index])
+        #model.Add( sum(doctors_data['Dr. Dan Frimerman']["worked_shifts"][index][sindex] for sindex in all_shifts) <= doctors_data['Dr. Dan Frimerman']["requested_hours"][index])
+        #model.Add( sum(doctors_data['Dr. Deena Wasserman']["worked_shifts"][index][sindex] for sindex in all_shifts) <= doctors_data['Dr. Deena Wasserman']["requested_hours"][index])
+        #model.Add( sum(doctors_data['Dr. Eliana Megerman']["worked_shifts"][index][sindex] for sindex in all_shifts) <= doctors_data['Dr. Eliana Megerman']["requested_hours"][index])
+        #model.Add( sum(doctors_data['Dr. Evgeni Kontrient']["worked_shifts"][index][sindex] for sindex in all_shifts) <= doctors_data['Dr. Evgeni Kontrient']["requested_hours"][index])
+        #model.Add( sum(doctors_data['Dr. Geoffrey Kamen']["worked_shifts"][index][sindex] for sindex in all_shifts) <= doctors_data['Dr. Geoffrey Kamen']["requested_hours"][index])
+        #model.Add( sum(doctors_data['Dr. Georgina Haden']["worked_shifts"][index][sindex] for sindex in all_shifts) <= doctors_data['Dr. Georgina Haden']["requested_hours"][index])
+        #model.Add( sum(doctors_data['Dr. Lindsay Agolia']["worked_shifts"][index][sindex] for sindex in all_shifts) <= doctors_data['Dr. Lindsay Agolia']["requested_hours"][index])
+
+
+
+
+
+
+
+
+
+#
 
 for (d,s) in two_doctors_shifts:
      model.Add(sum(doctors_data[doctor]["worked_shifts"][d][s] for doctor in all_doctors) <= 2)
