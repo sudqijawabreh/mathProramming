@@ -99,13 +99,8 @@ all_fixed_doctors = [doctor for doctor in doctors_data.keys() if doctors_data[do
 all_doctors = [doctor for doctor in doctors_data.keys()]
 
 
-def chunks(lst, n):
-    """Yield successive n-sized chunks from lst."""
-    for i in range(0, len(lst), n):
-        yield lst[i:i + n]
-
-
-for (i,s) in zip(range(num_days),two_doctors_shifts):
+for (i,s) in two_doctors_shifts:
+    print(i,s)
     patients[i][s]
 
 # add variables
@@ -134,16 +129,23 @@ for doctor in all_fixed_doctors:
                 else:
                     model.Add(doctors_data[doctor]["worked_shifts"][index][sindex] == 0)
 
+for doctor in all_doctors:
+    for day,index in zip(doctors_data[doctor]["shift_available"], all_days):
+            for (shift,sindex) in zip(day,all_shifts):
+                if doctors_data[doctor]["shift_available"][index][sindex] == 0:
+                    print(doctors_data[doctor]["worked_shifts"][index][sindex] == 1)
+                    model.Add(doctors_data[doctor]["worked_shifts"][index][sindex] == 0)
 
 
-for (s,d) in zip(two_doctors_shifts, range(len(two_doctors_shifts))):
-     model.Add(sum(doctors_data[doctor]["worked_shifts"][d][s] for doctor in all_doctors) == 2)
+for (d,s) in two_doctors_shifts:
+     model.Add(sum(doctors_data[doctor]["worked_shifts"][d][s] for doctor in all_doctors) <= 2)
+
 
 for dindex in all_days:
     for sindex in all_shifts:
         if not (dindex, sindex) in two_doctors_shifts:
             print(dindex,sindex)
-            model.Add(sum(doctors_data[doctor]["worked_shifts"][dindex][sindex] for doctor in all_doctors ) == 1)
+            model.Add(sum(doctors_data[doctor]["worked_shifts"][dindex][sindex] for doctor in all_doctors ) <= 1)
 
                    
 for dindex in all_days_in_weeks:
@@ -167,7 +169,8 @@ for dindex in all_days_in_weeks:
     for doctor in all_non_fixed_doctors
     for sindex in all_shifts
     )
-    model.Add(sum_value == num_shifts).OnlyEnforceIf(hy_day)
+    model.Add(sum_value <= num_shifts).OnlyEnforceIf(hy_day)
+    model.Add(sum_value > 0).OnlyEnforceIf(hy_day)
     model.Add(sum_value == 0).OnlyEnforceIf(hy_day.Not())
 
 for dindex in all_days_in_weeks:
@@ -177,19 +180,18 @@ for dindex in all_days_in_weeks:
     for doctor in all_non_fixed_doctors
     for sindex in all_shifts
     )
-    model.Add(sum_value == num_shifts).OnlyEnforceIf(hy_day)
+    model.Add(sum_value <= num_shifts).OnlyEnforceIf(hy_day)
+    model.Add(sum_value > 0).OnlyEnforceIf(hy_day)
     model.Add(sum_value == 0).OnlyEnforceIf(hy_day.Not())
    
 
-hyper_shifts_sum = sum(hypertension_days)
-model.Add(hyper_shifts_sum >= 3)
-model.Add(hyper_shifts_sum <= 4)
-
-diabetes_shifts_sum = sum(diabetes_days)
-model.Add(diabetes_shifts_sum >= 3)
-model.Add(diabetes_shifts_sum <= 4)
-
-
+for week in (all_days_in_weeks // 7):
+    hyper_shifts_sum = sum(hypertension_days[week * 7 : (week + 1) * 7])
+    model.Add(hyper_shifts_sum >= 3)
+    model.Add(hyper_shifts_sum <= 4)
+    diabetes_shifts_sum = sum(diabetes_days[week * 7 : (week + 1) * 7])
+    model.Add(diabetes_shifts_sum >= 3)
+    model.Add(diabetes_shifts_sum <= 4)
 
 
 # shift = if doctor takes shift or not 0,1
@@ -198,7 +200,7 @@ model.Add(diabetes_shifts_sum <= 4)
 # since state_coverage max value is 50
 model.Maximize(
         sum(
-            doctors_data[doctor]["shift_available"][dindex][sindex] * shift *
+             shift *
             (100 * doctors_data[doctor]["priority"])
         for doctor in all_doctors
         for (day,dindex) in zip(doctors_data[doctor]["worked_shifts"], all_days)
@@ -237,7 +239,7 @@ if(status == cp_model.OPTIMAL):
                 for (shift,sindex) in zip(day,all_shifts):
                     assigned = solver.Value(shift)
                     if(assigned == 1):
-                        print("Day",dindex, end=' ')
+                        print("Day",dates[dindex],dindex, end=' ')
                         print("shift",sindex, solver.Value(shift))
                 print()
 
@@ -266,7 +268,7 @@ if(status == cp_model.OPTIMAL):
                 for (shift,sindex) in zip(day,all_shifts):
                     assigned = solver.Value(shift)
                     if(assigned == 1):
-                        print("Day",dindex, end=' ')
+                        print("Day",dates[dindex].date(),dindex, end=' ')
                         print("shift",sindex, solver.Value(shift))
                 print()
 
